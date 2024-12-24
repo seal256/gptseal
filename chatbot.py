@@ -14,7 +14,11 @@ log = get_logger(__name__)
 message_history = {}
 MAX_HISTORY_LENGTH = 50
 
-async def ask_openai(user_id: str, user_message: str):
+def clean_message_history(user_id):
+    if user_id in message_history:
+        message_history[user_id] = []
+
+async def ask_openai(user_id, user_message: str):
     try:
         messages = message_history.get(user_id, [])
         messages.append({"role": "user", "content": user_message})

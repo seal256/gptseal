@@ -1,10 +1,10 @@
 from fastapi import FastAPI, HTTPException, Request
 from telegram import Bot, Update
-import os, json
+import os, json, asyncio
 from dotenv import load_dotenv
 
 from util import get_logger
-from chatbot import ask_openai
+from chatbot import ask_openai, clean_message_history
 
 load_dotenv()
 log = get_logger('main')
@@ -15,6 +15,7 @@ ALLOWED_USERS = json.loads(os.getenv("ALLOWED_USERS"))
 GPTSEAL_TOKEN = os.getenv("GPTSEAL_TOKEN")
 
 bot = Bot(token=TELEGRAM_TOKEN)
+user_locks = {}
 
 @app.post("/chatbot")
 async def webhook(request: Request):
@@ -23,7 +24,7 @@ async def webhook(request: Request):
         raise HTTPException(status_code=403, detail="Authentication failed")
     
     request_json = await request.json()
-    log.info(f"Request: {json.dumps(request_json)}")
+    log.debug(f"Request: {json.dumps(request_json)}")
     update = Update.de_json(request_json, bot)
     user_id = update.message.from_user.id
 
@@ -33,12 +34,18 @@ async def webhook(request: Request):
     user_message = update.message.text
     log.info(f"{user_id} received message of len: {len(user_message)}")
     
-    response = await ask_openai(user_id, user_message)
-    
-    log.info(f"{user_id} sending response of len: {len(response)}")
+    lock = user_locks.setdefault(user_id, asyncio.Lock())
+    async with lock: # disallows concurrent requests from the same user, but doesn't check the order of requests
+        if user_message == '/new':
+            log.info(f"{user_id} clearing message history")
+            clean_message_history(user_id)
+            return {"status": "ok"}
+        
+        response = await ask_openai(user_id, user_message)
+        log.info(f"{user_id} sending response of len: {len(response)}")
 
-    sent_message = await bot.send_message(chat_id=user_id, text=response)
-    log.info(f"{user_id} created message with id: {sent_message.message_id}")
+        sent_message = await bot.send_message(chat_id=user_id, text=response)
+        log.info(f"{user_id} created message with id: {sent_message.message_id}")
 
     return {"status": "ok"}
 
