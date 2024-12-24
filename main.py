@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from telegram import Bot, Update
+from chatgpt_md_converter import telegram_format
 import os, json, asyncio
 from dotenv import load_dotenv
 
@@ -44,7 +45,8 @@ async def webhook(request: Request):
         response = await ask_openai(user_id, user_message)
         log.info(f"{user_id} sending response of len: {len(response)}")
 
-        sent_message = await bot.send_message(chat_id=user_id, text=response)
+        html = telegram_format(response)
+        sent_message = await bot.send_message(chat_id=user_id, text=html, parse_mode='HTML')
         log.info(f"{user_id} created message with id: {sent_message.message_id}")
 
     return {"status": "ok"}

@@ -3,3 +3,4 @@ uvicorn
 openai
 python-telegram-bot
 python-dotenv
+chatgpt-md-converter
