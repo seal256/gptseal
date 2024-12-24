@@ -7,15 +7,21 @@ from util import get_logger
 from chatbot import ask_openai
 
 load_dotenv()
-log = get_logger(__name__)
+log = get_logger('main')
 
 app = FastAPI()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-ALLOWED_USERS = [7934534604] 
+ALLOWED_USERS = json.loads(os.getenv("ALLOWED_USERS")) 
+GPTSEAL_TOKEN = os.getenv("GPTSEAL_TOKEN")
+
 bot = Bot(token=TELEGRAM_TOKEN)
 
-@app.post(f"/chatbot")
+@app.post("/chatbot")
 async def webhook(request: Request):
+    secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if secret_token != GPTSEAL_TOKEN:
+        raise HTTPException(status_code=403, detail="Authentication failed")
+    
     request_json = await request.json()
     log.info(f"Request: {json.dumps(request_json)}")
     update = Update.de_json(request_json, bot)

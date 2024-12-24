@@ -28,7 +28,7 @@ async def ask_openai(user_id: str, user_message: str):
             message_history[user_id] = []
         messages.append({"role": "assistant", "content": response_content})
         if len(messages) > MAX_HISTORY_LENGTH:
-            messages = messages[-MAX_HISTORY_LENGTH:0]
+            messages = messages[-MAX_HISTORY_LENGTH:]
         message_history[user_id] = messages
         
     except Exception as e:
@@ -37,3 +37,10 @@ async def ask_openai(user_id: str, user_message: str):
         response_content = f"ask_openai error: {message}"
 
     return response_content
+
+if __name__=='__main__':
+    import asyncio
+    async def test():
+        response = await ask_openai(1234, 'hi')
+        print(response)
+    asyncio.run(test())
