@@ -30,6 +30,7 @@ async def webhook(request: Request):
     user_id = update.message.from_user.id
 
     if user_id not in ALLOWED_USERS:
+        log.info(f'Unknown user {user_id}')
         raise HTTPException(status_code=403, detail="Authentication failed")
 
     user_message = update.message.text
