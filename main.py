@@ -5,8 +5,8 @@ from chatgpt_md_converter import telegram_format
 import os, json, asyncio
 from dotenv import load_dotenv
 
-from util import get_logger
-from chatbot import ask_openai, clean_message_history
+from util import format_exception, get_logger
+from chatbot import ask_openai
 
 load_dotenv()
 log = get_logger('main')
@@ -17,7 +17,43 @@ ALLOWED_USERS = json.loads(os.getenv("ALLOWED_USERS"))
 GPTSEAL_TOKEN = os.getenv("GPTSEAL_TOKEN")
 
 bot = Bot(token=TELEGRAM_TOKEN)
-user_locks = {}
+user_message_history = {}
+MAX_HISTORY_LENGTH = 50
+user_tasks: dict[int, asyncio.Task] = {} # TODO: limit the dict growth if there are many users to serve
+user_lock = asyncio.Lock()
+
+async def submit_new_message(user_id: int):
+    """
+    Sends request to openai, records the responce and sends it back to telegram chat.
+    """
+    try:
+        messages = user_message_history.get(user_id, [])
+        if not messages:
+            log.error(f'{user_id} empty message list')
+            return
+
+        response = await ask_openai(user_id, messages)
+        log.info(f"{user_id} sending response of len: {len(response)}")
+
+        if len(messages) > MAX_HISTORY_LENGTH:
+            messages = messages[-MAX_HISTORY_LENGTH:]
+        messages.append({"role": "assistant", "content": response})
+        
+        async with user_lock:
+            user_message_history[user_id] = messages
+
+        html = telegram_format(response)
+        if len(html) < MessageLimit.MAX_TEXT_LENGTH:
+            sent_message = await bot.send_message(chat_id=user_id, text=html, parse_mode='HTML')
+            log.info(f"{user_id} created message with id: {sent_message.message_id}")
+        else:
+            sent_message = await bot.send_message(chat_id=user_id, text=response[:MessageLimit.MAX_TEXT_LENGTH-5] + '\n...')
+            log.info(f"{user_id} created reduced text message with id: {sent_message.message_id}")
+        
+    except asyncio.CancelledError:
+        log.info(f'{user_id} submit_new_message task was cancelled')
+    except Exception as e:
+        log.error(f'{user_id} error in submit_new_message: {format_exception(e)}')
 
 @app.post("/chatbot")
 async def webhook(request: Request):
@@ -34,30 +70,37 @@ async def webhook(request: Request):
         log.info(f'Unknown user {user_id}')
         raise HTTPException(status_code=403, detail="Authentication failed")
 
-    user_message = update.message.text
-    if not user_message:
+    new_user_message = update.message.text
+    if not new_user_message:
         log.info(f"{user_id} received invalid update: {update}")
         return {"status": "ok"}
-    log.info(f"{user_id} received message of len: {len(user_message)}")
+    log.info(f"{user_id} received message of len: {len(new_user_message)}")
     
-    lock = user_locks.setdefault(user_id, asyncio.Lock())
-    async with lock: # disallows concurrent requests from the same user, but doesn't check the order of requests
-        if user_message == '/new':
+    async with user_lock: # disallows concurrent requests, but ignores the order of requests
+        if user_id not in user_message_history:
+            user_message_history[user_id] = []
+        message_history = user_message_history.get(user_id)
+            
+        if user_id in user_tasks:
+            if message_history and message_history[-1]['content'] == new_user_message:
+                # the message is already processed, nothing to do
+                return {"status": "ok"}
+            
+            else:
+                # we need to cancel the existing task
+                user_tasks[user_id].cancel()
+                await user_tasks[user_id]  # Wait for the task to be cancelled
+
+        if new_user_message == '/new':
             log.info(f"{user_id} clearing message history")
-            clean_message_history(user_id)
+            user_message_history[user_id] = []
             return {"status": "ok"}
-        
-        response = await ask_openai(user_id, user_message)
-        log.info(f"{user_id} sending response of len: {len(response)}")
 
-        html = telegram_format(response)
-        if len(html) < MessageLimit.MAX_TEXT_LENGTH:
-            sent_message = await bot.send_message(chat_id=user_id, text=html, parse_mode='HTML')
-            log.info(f"{user_id} created message with id: {sent_message.message_id}")
-        else:
-            sent_message = await bot.send_message(chat_id=user_id, text=response[:MessageLimit.MAX_TEXT_LENGTH-5] + '\n...')
-            log.info(f"{user_id} created reduced text message with id: {sent_message.message_id}")
-
+        message_history.append({"role": "user", "content": new_user_message})
+        task = asyncio.create_task(submit_new_message(user_id))
+        user_tasks[user_id] = task
+    
+    log.info(f'{user_id} submitted new background task')
     return {"status": "ok"}
 
 if __name__ == "__main__":

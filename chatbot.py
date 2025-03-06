@@ -11,33 +11,17 @@ global openai_client
 openai_client = AsyncOpenAI(api_key = OPENAI_API_KEY)
 log = get_logger(__name__)
 
-message_history = {}
-MAX_HISTORY_LENGTH = 50
-
-def clean_message_history(user_id):
-    if user_id in message_history:
-        message_history[user_id] = []
-
-async def ask_openai(user_id, user_message: str):
+async def ask_openai(user_id, messages: list[dict]):
     try:
-        messages = message_history.get(user_id, [])
-        messages.append({"role": "user", "content": user_message})
         response = await openai_client.chat.completions.create(
             model=MODEL,
             messages=messages
         )
         response_content = response.choices[0].message.content
-
-        if user_id not in message_history:
-            message_history[user_id] = []
-        messages.append({"role": "assistant", "content": response_content})
-        if len(messages) > MAX_HISTORY_LENGTH:
-            messages = messages[-MAX_HISTORY_LENGTH:]
-        message_history[user_id] = messages
         
     except Exception as e:
         message = format_exception(e)
-        log.error(f"ask_openai error: {message}")
+        log.error(f"{user_id} ask_openai error: {message}")
         response_content = f"ask_openai error: {message}"
 
     return response_content

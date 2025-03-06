@@ -1,4 +1,4 @@
-import os
+import os, json
 import requests
 from dotenv import load_dotenv
 load_dotenv()
@@ -6,6 +6,7 @@ load_dotenv()
 GPTSEAL_URL = os.getenv("GPTSEAL_URL")
 GPTSEAL_TOKEN = os.getenv("GPTSEAL_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+USER_ID = json.loads(os.getenv("ALLOWED_USERS"))[0]
 
 message = {"update_id": 201856342, "message": {"message_id": 8, "from": {"id": 1, "is_bot": False, "first_name": "X", "language_code": "ru", "is_premium": True}, "chat": {"id": 1, "first_name": "X", "type": "private"}, "date": 1735056409, "text": "Hello there"}}
 
@@ -31,5 +32,5 @@ def setup_webhook():
     print(response.text)
 
 if __name__ == "__main__":
-    send_message(1, 'tell me a joke')
+    send_message(USER_ID, 'tell me a joke')
     # setup_webhook()
