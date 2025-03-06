@@ -35,6 +35,9 @@ async def webhook(request: Request):
         raise HTTPException(status_code=403, detail="Authentication failed")
 
     user_message = update.message.text
+    if not user_message:
+        log.info(f"{user_id} received invalid update: {update}")
+        return {"status": "ok"}
     log.info(f"{user_id} received message of len: {len(user_message)}")
     
     lock = user_locks.setdefault(user_id, asyncio.Lock())
